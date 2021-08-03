@@ -19,3 +19,5 @@ python fuzz.py test [Website with instanceID here]
 DVWA: 
 
 python fuzz.py test http://127.0.0.1/dvwa --custom-auth=dvwa --common-words=commonPages.txt --vectors=vectors.txt --sensitive=sensitive.txt --random=false --slow=1000
+
+python fuzz.py test http://www.google.com --common-words=commonPages.txt --vectors=vectors.txt --sensitive=sensitive.txt --random=false --slow=1000

@@ -2,7 +2,6 @@ import argparse
 import random
 import mechanicalsoup
 import time
-from tqdm import tqdm
 from fuzzMethods import*
 
 
@@ -536,6 +535,220 @@ class Fuzz:
                     response = browser.open(url + "quitserver")
                     if "<pre>Server quit.</pre>" in response.text:
                         print("Denial of Service attack worked!")
+
+        # NO Custom Web Crawl
+
+        else:
+            website = url
+            response = browser.open(website)
+            if response.status_code != 200:
+                print("Page not reached.\n\n")
+            else:
+                print("Page Reached\n\n")
+            if action == "discover":
+                print("Beginning discover...\n\n")
+            else:
+                print("Beginning test...\n")
+            cookies = list()
+            cookies = browser.get_cookiejar()
+            mainPage = browser.get_url()
+
+
+            # Looking for all links on page
+            urls = browser.links()
+            validUrls = list()
+
+            print("Crawling Site...")
+
+            for url in urls:
+                reached = False
+                browser.follow_link(url)
+                if 'google' in browser.get_url():
+                    validUrls.append(browser.get_url())
+                browser.open(mainPage)
+
+            # Trying to guess pages
+            guessedPages = list()
+            common_ext = open("commonExtensions.txt", "r").read().splitlines()
+
+            try:
+                common_pages = open(args.common, "r").read().splitlines()
+            except:
+                print("list of common words file not found: " + args.common)
+
+            if common_pages:
+                for test in common_pages:
+                    for ext in common_ext:
+                        potentialPage = browser.open(args.url + test + "." + ext)
+                        # making sure its not already discovered, status code below 300 is successfully reached
+                        if potentialPage.status_code < 300 and browser.get_url() not in validUrls:
+                            validUrls.append(browser.get_url())
+                            guessedPages.append(browser.get_url())
+
+
+            # Loooking for inputs on all links
+            pages = list()
+
+            for url in validUrls:
+                browser.open(url)
+                possibleForms = browser.page.find_all('form')
+                forms = list()
+                for form in possibleForms:
+                    inputList = list()
+                    defForm = {'name': '', 'inputs': list()}
+                    forms.append(defForm)
+                    for input_field in form.find_all('input'):
+                        if input_field.has_attr('name'):
+                            defForm['inputs'].append(input_field['name'])
+
+                page = {'url': url, "forms": forms}
+                pages.append(page)
+
+            if args.action == 'discover':
+                print("LINKS FOUND ON PAGE:")
+                print("-------------------------")
+                print("-------------------------")
+                for url in validUrls:
+                    print(url)
+                print()
+                print()
+                print("GUESSED PAGES: ")
+                print("-------------------------")
+                print("-------------------------")
+                for guess in guessedPages:
+                    print(guess)
+                print()
+                print()
+                print("INPUT FORMS ON PAGES: ")
+                print("-------------------------")
+                print("-------------------------")
+                for page in pages:
+                    print(page.get('url'), ": ")
+                    for form in page.get('forms'):
+                        for input in form.get('inputs'):
+                            print(input)
+                print()
+                print()
+                # Display cookies
+                print("COOKIES FOUND: ")
+                print("-------------------------")
+                print("-------------------------")
+                for cookie in cookies:
+                    print(cookie)
+
+            elif args.action == 'test':
+                if args.vectors is None or args.sensitive is None:
+                    print('No vector or sensitive file given!!')
+                else:
+
+                    vectors = open(args.vectors, "r").read().splitlines()
+                    sensitive = open(args.sensitive, "r").read().splitlines()
+                    DELAY_THRESHOLD = float(args.slow_ms)
+
+                    print("Checking all inputs on all pages...")
+
+                    for page in pages:
+                        forms = page.get("forms")
+                        url = page.get("url")
+                        print(url,": ")
+                        if args.random == "False" or args.random == "false":
+                            # Sanitize
+                            print("Sanitize:\n")
+                            sanit = False
+                            sql = False
+                            browser.open(url)
+                            browser.session.cookies["security"] = "low"
+                            for form in forms:
+                                for vector in vectors:
+                                    browser.select_form()
+                                    for input in form.get("inputs"):
+                                        browser[input] = vector
+                                    try:
+                                        response = browser.submit_selected()
+                                        if "MySQL " in response.text:
+                                            sql = True
+                                        if "<" in vector or ">" in vector or "/" in vector or "\"" in vector or "?" in vector:
+                                            if vector in response.text:
+                                                sanit = True
+                                        browser.open(url)
+                                    except FileNotFoundError:
+                                        print("Upload Page Broke")
+
+
+                            if sql:
+                                print("Possible SQL exploit found on page.")
+                            if sanit:
+                                print("Special characters were not sanitized or escaped in page " + url)
+                            # Delay
+                            print("Delay:\n")
+                            delay = False
+                            for form in forms:
+                                for vector in vectors:
+
+                                    browser.select_form()
+                                    for input in form.get("inputs"):
+                                        browser[input] = vector
+                                    start_time = time.time()
+                                    try:
+                                        response = browser.submit_selected()
+                                        # print(response.text)
+                                        browser.open(url)
+                                    except FileNotFoundError:
+                                        print("Upload Page Broke")
+
+                                    end_time = time.time()
+                                    total_time = start_time - end_time
+                                    if total_time > DELAY_THRESHOLD:
+                                        delay = True
+                            if delay:
+                                print("Delayed Response: ", url, " - ", total_time)
+
+                            # HTTP Response
+                            print("HTTP:\n")
+                            HTTP = False
+                            for form in forms:
+                                for vector in vectors:
+                                    browser.select_form()
+                                    for input in form.get("inputs"):
+                                        browser[input] = vector
+                                    try:
+                                        response = browser.submit_selected()
+                                        if hasattr(response, 'status_code'):
+                                            if response.status_code < 200 or response.status_code > 299:
+                                                HTTP = True
+                                        browser.open(url)
+                                    except FileNotFoundError:
+                                        print("Upload Page Broke")
+
+                            if HTTP:
+                                print("HTTP Response !200 - ", url, " - ", response.status_code)
+
+
+                            # Leak
+                            print("Leak:\n")
+                            leak = False
+                            for form in forms:
+                                for vector in vectors:
+                                    browser.select_form()
+                                    for input in form.get("inputs"):
+                                        browser[input] = vector
+                                    try:
+                                        response = browser.submit_selected()
+                                        # print(response.text)
+                                        for item in sensitive:
+                                            if item in response.text:
+                                                leak = True
+                                    except FileNotFoundError:
+                                        print("Upload Page Broke")
+                                    # if form.get('method') == 'post' or form.get('method') == 'POST':
+                                    #     response = browser.session.post(url + action, data=payload)
+                                    # elif form.get("method") == 'get' or form.get('method') == "GET":
+                                    #     response = browser.session.get(url + action, params=payload)
+
+                                    browser.open(url)
+                            if leak:
+                                print("Sensitive data leaked: ", item)
+
 
 
 

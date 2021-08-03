@@ -1,0 +1,8 @@
+date of birth
+credit card
+MySQL
+ssn
+dob
+DOB
+address
+home address

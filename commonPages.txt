@@ -1,0 +1,11 @@
+default
+config
+register
+index
+password
+admin
+admin/index
+about
+search
+reset
+settings
